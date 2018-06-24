@@ -88,10 +88,13 @@ func bodyEncoding(response *Response) string {
 	metaTags := httpMetaPattern.FindAll(temp, -1)
 	for _, i := range metaTags {
 		cs := charsetRe.FindSubmatch(i)
-		return string(cs[1])
+		if cs != nil {
+			return string(cs[1])
+		}
 	}
 	return ""
 }
+
 func getEncoding(response *Response) string {
 	head_encoding := headEncoding(response)
 	if (len(head_encoding) > 0) {
