@@ -21,7 +21,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-	"regexp"
+
 	"github.com/saintfish/chardet"
 	"golang.org/x/net/html/charset"
 )
@@ -58,52 +58,6 @@ func (r *Response) FileName() string {
 	return SanitizeFileName(strings.TrimPrefix(r.Request.URL.Path, "/"))
 }
 
-// regex from https://github.com/apache/tika/blob/0e8f44459fbbed991171e9eafb3395df6060fb7a/tika-parsers/src/main/java/org/apache/tika/parser/html/HtmlEncodingDetector.java#L99
-var charsetRe = regexp.MustCompile(`(?i)charset\s*=\s*(?:['\\"]\\s*)?([-_:\\.a-z0-9]+)`)
-var httpMetaPattern = regexp.MustCompile("(?is)<\\s*meta\\s+([^<>]+)")
-
-func headEncoding(response *Response) string { // get encoding from head
-	contentType := response.Headers.Get("content-type")
-	rtnValue := ""
-	if len(contentType) > 0 {
-		if strings.Contains(contentType, "charset") {
-			re := regexp.MustCompile(`(?i)charset=(?P<charset>.*)`)
-			a := re.FindSubmatch([]byte(contentType))
-			if len(a) > 0 {
-				rtnValue = string(a[1])
-			}
-		}
-	}
-	return rtnValue
-}
-
-func bodyEncoding(response *Response) string {
-	maxSize := 1024 * 10
-	temp := make([]byte, maxSize)
-	if len(response.Body) > maxSize {
-		temp = response.Body[1:maxSize]
-	} else {
-		temp = response.Body
-	}
-	metaTags := httpMetaPattern.FindAll(temp, -1)
-	for _, i := range metaTags {
-		cs := charsetRe.FindSubmatch(i)
-		if cs != nil {
-			return string(cs[1])
-		}
-	}
-	return ""
-}
-
-func getEncoding(response *Response) string {
-	head_encoding := headEncoding(response)
-	if (len(head_encoding) > 0) {
-		return head_encoding
-	} else {
-		return bodyEncoding(response)
-	}
-}
-
 func (r *Response) fixCharset(detectCharset bool, defaultEncoding string) error {
 	if defaultEncoding != "" {
 		tmpBody, err := encodeBytes(r.Body, "text/plain; charset="+defaultEncoding)
@@ -113,9 +67,8 @@ func (r *Response) fixCharset(detectCharset bool, defaultEncoding string) error 
 		r.Body = tmpBody
 		return nil
 	}
-	contentType := strings.ToLower(getEncoding(r))
-
-	if len(contentType) == 0 { // no charset found
+	contentType := strings.ToLower(r.Headers.Get("Content-Type"))
+	if !strings.Contains(contentType, "charset") {
 		if !detectCharset {
 			return nil
 		}
@@ -126,7 +79,7 @@ func (r *Response) fixCharset(detectCharset bool, defaultEncoding string) error 
 		}
 		contentType = "text/plain; charset=" + r.Charset
 	}
-	if strings.Compare(contentType, "utf-8") == 0 || strings.Compare(contentType, "utf8") == 0 {
+	if strings.Contains(contentType, "utf-8") || strings.Contains(contentType, "utf8") {
 		return nil
 	}
 	tmpBody, err := encodeBytes(r.Body, contentType)
